@@ -9,8 +9,12 @@ load_dotenv()
 # Initialize OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Set the ID of your fine-tuned model
-FINE_TUNED_MODEL = "ft:gpt-3.5-turbo-0613:your-org::your-model-id"  # Replace with your actual model ID
+# Get the fine-tuned model ID from environment variable
+FINE_TUNED_MODEL = os.getenv("FINE_TUNED_MODEL_ID")
+
+if not FINE_TUNED_MODEL:
+    st.error("Fine-tuned model ID is not set. Please set the FINE_TUNED_MODEL_ID environment variable.")
+    st.stop()
 
 def get_ai_response(prompt, max_tokens=500):
     try:
