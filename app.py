@@ -66,20 +66,3 @@ if user_input:
     # Display Claude's response
     st.write("Columnist Bot:", response.content[0].text)
 
-# Instructions for running the app
-st.sidebar.header("How to use")
-st.sidebar.write("""
-1. Ensure your 'columnist_data.csv' file is in the same directory as this script.
-2. Make sure you have the required libraries installed:
-   ```
-   pip install streamlit pandas anthropic python-dotenv
-   ```
-3. Create a .env file in the same directory as this script and add your Anthropic API key:
-   ```
-   ANTHROPIC_API_KEY=your_api_key_here
-   ```
-4. Run the Streamlit app:
-   ```
-   streamlit run app.py
-   ```
-""")
