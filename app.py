@@ -1,20 +1,20 @@
 import streamlit as st
-import openai
+from openai import OpenAI
 import os
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
 
-# Set OpenAI API key
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# Initialize OpenAI client
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # Set the ID of your fine-tuned model
 FINE_TUNED_MODEL = "ft:gpt-3.5-turbo-0613:your-org::your-model-id"  # Replace with your actual model ID
 
 def get_ai_response(prompt, max_tokens=500):
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model=FINE_TUNED_MODEL,
             messages=[
                 {"role": "system", "content": "You are an AI writing assistant trained to mimic the style, tone, and vocabulary of columnist Shadi Hamid. You can write, edit, and draft in his voice."},
@@ -23,7 +23,7 @@ def get_ai_response(prompt, max_tokens=500):
             max_tokens=max_tokens,
             temperature=0.7
         )
-        return response.choices[0].message['content']
+        return response.choices[0].message.content
     except Exception as e:
         return f"An error occurred: {str(e)}"
 
