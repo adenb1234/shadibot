@@ -1,4 +1,5 @@
 import streamlit as st
+import pandas as pd
 import anthropic
 import os
 from dotenv import load_dotenv
@@ -9,13 +10,29 @@ load_dotenv()
 # Initialize Anthropic client
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
-# Load the context from the text file
-@st.cache_resource
-def load_context():
-    with open("columnist_context.txt", "r", encoding="utf-8") as f:
-        return f.read()
+# Function to generate context from CSV
+def generate_context_from_csv():
+    df = pd.read_csv("columnist_data.csv")
+    context = "\n\n".join([
+        f"Title: {row['Title']}\nDate: {row['Date']}\nText: {row['Text']}"
+        for _, row in df.iterrows()
+    ])
+    return context
 
-context = load_context()
+# Load or generate the context
+@st.cache_resource
+def load_or_generate_context():
+    context_file = "columnist_context.txt"
+    if os.path.exists(context_file):
+        with open(context_file, "r", encoding="utf-8") as f:
+            return f.read()
+    else:
+        context = generate_context_from_csv()
+        with open(context_file, "w", encoding="utf-8") as f:
+            f.write(context)
+        return context
+
+context = load_or_generate_context()
 
 # Streamlit UI
 st.title("Columnist Bot")
@@ -52,10 +69,10 @@ if user_input:
 # Instructions for running the app
 st.sidebar.header("How to use")
 st.sidebar.write("""
-1. Ensure you have run `generate_context.py` to create the 'columnist_context.txt' file.
+1. Ensure your 'columnist_data.csv' file is in the same directory as this script.
 2. Make sure you have the required libraries installed:
    ```
-   pip install streamlit anthropic python-dotenv
+   pip install streamlit pandas anthropic python-dotenv
    ```
 3. Create a .env file in the same directory as this script and add your Anthropic API key:
    ```
