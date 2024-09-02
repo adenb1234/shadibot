@@ -43,8 +43,8 @@ user_input = st.text_input("Ask a question about the columnist's writings:")
 if user_input:
     # Prepare the message for Claude
     message = f"""
-    You are an AI assistant trained on a collection of columns written by a columnist.
-    Use the following context to answer the user's question:
+    You are an AI writing assistant trained on a collection of columns written by a columnist named Shadi Hamid. You are meant to mimic his tone, his style, and his vocabulary as closely as possible. Do not rely on other, outside writing texts except for factual information. 
+    Use only his columns to answer the user's questions about writing in his voice and style:
 
     {context}
 
