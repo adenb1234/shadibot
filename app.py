@@ -35,9 +35,8 @@ def cosine_similarity(a, b):
 @st.cache_data
 def load_articles():
     try:
-        # Load CSV from GitHub URL
-        github_url = "https://raw.githubusercontent.com/shadihamid/columnist_data/main/columnist_data.csv"
-        df = pd.read_csv(github_url)
+        # Load local CSV file
+        df = pd.read_csv('columnist_data.csv')
         
         # Combine title and text for better context
         df['full_text'] = df.apply(lambda row: f"Title: {row['title']}\n\nContent: {row['text']}", axis=1)
@@ -50,6 +49,9 @@ def load_articles():
             embeddings.append(embedding)
         
         return df, embeddings
+    except FileNotFoundError:
+        st.error("Could not find columnist_data.csv file. Please make sure it's in the same directory as the script.")
+        return None, None
     except Exception as e:
         st.error(f"Error loading articles: {str(e)}")
         return None, None
