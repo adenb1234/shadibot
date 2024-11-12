@@ -4,8 +4,7 @@ import pandas as pd
 from dotenv import load_dotenv
 import os
 import numpy as np
-from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_similarity
+from numpy.linalg import norm
 
 # Load environment variables
 load_dotenv()
@@ -20,10 +19,17 @@ def init_openai_client():
 
 client = init_openai_client()
 
-# Initialize BERT model
-@st.cache_resource
-def load_bert_model():
-    return SentenceTransformer('all-MiniLM-L6-v2')
+# Get embedding for a single text using OpenAI
+def get_embedding(text):
+    response = client.embeddings.create(
+        model="text-embedding-ada-002",
+        input=text
+    )
+    return response.data[0].embedding
+
+# Calculate cosine similarity between two vectors
+def cosine_similarity(a, b):
+    return np.dot(a, b) / (norm(a) * norm(b))
 
 # Load and process articles
 @st.cache_data
@@ -36,9 +42,12 @@ def load_articles():
         # Combine title and text for better context
         df['full_text'] = df.apply(lambda row: f"Title: {row['title']}\n\nContent: {row['text']}", axis=1)
         
-        # Get embeddings
-        model = load_bert_model()
-        embeddings = model.encode(df['full_text'].tolist(), show_progress_bar=True)
+        # Get embeddings for all articles
+        st.info("Generating embeddings for articles... This may take a few minutes.")
+        embeddings = []
+        for text in df['full_text']:
+            embedding = get_embedding(text)
+            embeddings.append(embedding)
         
         return df, embeddings
     except Exception as e:
@@ -48,11 +57,12 @@ def load_articles():
 def get_relevant_articles(query, df, embeddings, n_results=5):
     """Get most relevant articles based on semantic search"""
     try:
-        model = load_bert_model()
-        query_embedding = model.encode([query])
+        # Get query embedding
+        query_embedding = get_embedding(query)
         
         # Calculate similarities
-        similarities = cosine_similarity(query_embedding, embeddings)[0]
+        similarities = [cosine_similarity(query_embedding, doc_embedding) 
+                       for doc_embedding in embeddings]
         
         # Get top n_results
         top_indices = np.argsort(similarities)[-n_results:][::-1]
