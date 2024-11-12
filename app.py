@@ -1,11 +1,11 @@
 import streamlit as st
 from openai import OpenAI
-import chromadb
 import pandas as pd
 from dotenv import load_dotenv
 import os
 import numpy as np
-from chromadb.utils import embedding_functions
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
 
 # Load environment variables
 load_dotenv()
@@ -20,66 +20,50 @@ def init_openai_client():
 
 client = init_openai_client()
 
-# Initialize ChromaDB with OpenAI embeddings
+# Initialize BERT model
 @st.cache_resource
-def init_chromadb():
-    openai_ef = embedding_functions.OpenAIEmbeddingFunction(
-        api_key=os.getenv("OPENAI_API_KEY"),
-        model_name="text-embedding-ada-002"
-    )
-    chroma_client = chromadb.Client()
-    
-    # Delete collection if it exists to avoid duplicates
-    try:
-        chroma_client.delete_collection("columnist_articles")
-    except:
-        pass
-        
-    collection = chroma_client.create_collection(
-        name="columnist_articles",
-        embedding_function=openai_ef
-    )
-    return collection
+def load_bert_model():
+    return SentenceTransformer('all-MiniLM-L6-v2')
 
-# Load and index articles
+# Load and process articles
 @st.cache_data
-def load_and_index_articles():
+def load_articles():
     try:
         # Load CSV from GitHub URL
         github_url = "https://raw.githubusercontent.com/shadihamid/columnist_data/main/columnist_data.csv"
         df = pd.read_csv(github_url)
         
-        # Get ChromaDB collection
-        collection = init_chromadb()
-        
         # Combine title and text for better context
-        documents = [f"Title: {title}\n\nContent: {text}" 
-                    for title, text in zip(df['title'], df['text'])]
+        df['full_text'] = df.apply(lambda row: f"Title: {row['title']}\n\nContent: {row['text']}", axis=1)
         
-        # Index each article
-        collection.add(
-            documents=documents,
-            ids=[str(i) for i in range(len(df))],
-            metadatas=[{
-                "date": str(date),
-                "title": str(title)
-            } for date, title in zip(df['date'], df['title'])]
-        )
+        # Get embeddings
+        model = load_bert_model()
+        embeddings = model.encode(df['full_text'].tolist(), show_progress_bar=True)
         
-        return True
+        return df, embeddings
     except Exception as e:
-        st.error(f"Error loading and indexing articles: {str(e)}")
-        return False
+        st.error(f"Error loading articles: {str(e)}")
+        return None, None
 
-def get_relevant_articles(query, n_results=5):
+def get_relevant_articles(query, df, embeddings, n_results=5):
     """Get most relevant articles based on semantic search"""
-    collection = init_chromadb()
-    results = collection.query(
-        query_texts=[query],
-        n_results=n_results,
-        include=["documents", "metadatas"]
-    )
-    return results['documents'][0], results['metadatas'][0]  # Returns articles and their metadata
+    try:
+        model = load_bert_model()
+        query_embedding = model.encode([query])
+        
+        # Calculate similarities
+        similarities = cosine_similarity(query_embedding, embeddings)[0]
+        
+        # Get top n_results
+        top_indices = np.argsort(similarities)[-n_results:][::-1]
+        
+        relevant_articles = df.iloc[top_indices]['full_text'].tolist()
+        relevant_metadata = df.iloc[top_indices][['title', 'date']].to_dict('records')
+        
+        return relevant_articles, relevant_metadata
+    except Exception as e:
+        st.error(f"Error in semantic search: {str(e)}")
+        return [], []
 
 def get_ai_response(prompt, relevant_articles, relevant_metadata, max_tokens=1000):
     """Generate response using GPT-4 with context from relevant articles"""
@@ -87,10 +71,8 @@ def get_ai_response(prompt, relevant_articles, relevant_metadata, max_tokens=100
         # Create context from relevant articles
         context = "Here are some relevant examples of the columnist's writing to inform your response style:\n\n"
         for i, (article, metadata) in enumerate(zip(relevant_articles, relevant_metadata), 1):
-            # Include title and date in context
             context += f"Example {i} (Title: {metadata['title']}, Date: {metadata['date']}):\n{article}\n\n"
         
-        # Create the complete prompt
         system_prompt = (
             "You are an AI writing assistant trained to mimic the style, tone, and vocabulary "
             "of the columnist based on the provided examples. Pay attention to their typical "
@@ -122,15 +104,11 @@ def main():
     
     st.title("Columnist Writing Assistant")
     
-    # Initialize database on first run
-    if 'db_initialized' not in st.session_state:
-        with st.spinner("Initializing database and loading articles..."):
-            success = load_and_index_articles()
-            if success:
-                st.session_state.db_initialized = True
-            else:
-                st.error("Failed to initialize database")
-                st.stop()
+    # Load articles and embeddings
+    df, embeddings = load_articles()
+    if df is None or embeddings is None:
+        st.error("Failed to load articles database")
+        st.stop()
     
     st.markdown("""
     This app helps you generate content in the columnist's style using semantic search 
@@ -152,7 +130,7 @@ def main():
         if st.button("Generate") and topic:
             with st.spinner("Finding relevant articles and generating content..."):
                 # Get relevant articles
-                relevant_articles, relevant_metadata = get_relevant_articles(topic)
+                relevant_articles, relevant_metadata = get_relevant_articles(topic, df, embeddings)
                 
                 if show_relevant:
                     st.subheader("Relevant Articles Used for Context")
@@ -160,7 +138,6 @@ def main():
                         with st.expander(f"Article {i} - {metadata['title']} ({metadata['date']})"):
                             st.write(article)
                 
-                # Generate response
                 prompt = f"Write a column in the columnist's style on the topic: {topic}"
                 response = get_ai_response(prompt, relevant_articles, relevant_metadata)
                 if response:
@@ -172,7 +149,7 @@ def main():
         text_to_edit = st.text_area("Enter the text you want to edit:", height=200)
         if st.button("Edit") and text_to_edit:
             with st.spinner("Finding relevant articles and editing..."):
-                relevant_articles, relevant_metadata = get_relevant_articles(text_to_edit)
+                relevant_articles, relevant_metadata = get_relevant_articles(text_to_edit, df, embeddings)
                 
                 if show_relevant:
                     st.subheader("Relevant Articles Used for Context")
@@ -191,7 +168,7 @@ def main():
         topic = st.text_input("Enter a topic for the outline:")
         if st.button("Generate Outline") and topic:
             with st.spinner("Finding relevant articles and generating outline..."):
-                relevant_articles, relevant_metadata = get_relevant_articles(topic)
+                relevant_articles, relevant_metadata = get_relevant_articles(topic, df, embeddings)
                 
                 if show_relevant:
                     st.subheader("Relevant Articles Used for Context")
